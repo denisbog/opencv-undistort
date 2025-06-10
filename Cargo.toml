@@ -7,7 +7,16 @@ edition = "2024"
 anyhow = "1.0.98"
 bytes = "1.10.1"
 clap = { version = "4.5.38", features = ["derive"] }
+glam = "0.30.3"
 indicatif = "0.17.11"
-opencv = {version = "0.94.4", features = ["cudafilters", "cudaimgproc", "cudafilters"]}
+jpeg-decoder = "0.3.1"
+opencv = {version = "0.94.4", features = ["cudafilters", "cudaimgproc", "cudafilters", "clang-runtime"]}
+png = "0.17.16"
+rand = "0.9.1"
 serde = { version ="1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+v4l = "0.14.0"
+vulkano = "0.35.0"
+vulkano-shaders = "0.35.0"
+vulkano-taskgraph = "0.35.1"
+winit = "0.30.11"

@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand, arg};
 use indicatif::{HumanDuration, ProgressBar};
-use opencv::calib3d::get_optimal_new_camera_matrix;
+use opencv::calib3d::{get_optimal_new_camera_matrix, solve_pnp, solve_pnp_def};
 use opencv::core::{
     Point2f, Point3f, Size, TermCriteria, TermCriteria_EPS, TermCriteria_MAX_ITER, Vector,
 };
@@ -45,6 +45,12 @@ enum Action {
         #[arg(short, long)]
         output_dir: String,
     },
+    Solve {
+        #[arg(short, long)]
+        calibration_file: String,
+        #[arg(short, long)]
+        image_dir: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,7 +86,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let mut objpoints = Vector::<Vector<Point3f>>::new(); // 3d point in real world space
             let mut imgpoints = Vector::<Vector<Point2f>>::new(); // 2d points in image plane.
-            let pb = ProgressBar::new_spinner();
+            let count = fs::read_dir(&calibration_dir)?
+                .flatten()
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jpg"))
+                .count();
+            let pb = ProgressBar::new(count as u64);
             pb.println("[1/3] process images");
             let started = Instant::now();
             fs::read_dir(&calibration_dir)?
@@ -110,6 +120,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                             criteria,
                         )
                         .unwrap();
+
+                        let mut mtx = Mat::default();
+                        let mut dist = Mat::default();
+                        let mut rvecs = Vector::<Mat>::new();
+                        let mut tvecs = Vector::<Mat>::new();
+                        if let Ok(_result) = solve_pnp_def(
+                            &objp, &corners, &mut mtx, &mut dist, &mut rvecs, // rotation
+                            &mut tvecs, // translation
+                        ) {
+                            pb.println(format!("{image} rotation {:?}", rvecs));
+                            pb.println(format!("{image} translation {:?}", tvecs));
+                        } else {
+                            pb.println(format!("{image} calibration failed"));
+                        }
 
                         // Draw and display corners
                         //draw_chessboard_corners(&mut img, Size::new(width_dim, height_dim), &corners, ret)?;
@@ -238,6 +262,92 @@ fn main() -> Result<(), Box<dyn Error>> {
                     //     &dst_undistort,
                     // )?;
                 });
+        }
+        Action::Solve {
+            calibration_file,
+            image_dir,
+        } => {
+            // termination criteria
+            let criteria = TermCriteria {
+                typ: TermCriteria_EPS + TermCriteria_MAX_ITER,
+                max_count: 30,
+                epsilon: 0.001,
+            };
+
+            // prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
+            let width_dim = 11;
+            let height_dim = 8;
+            let objp_len = width_dim * height_dim;
+            let objp = Vector::<Point3f>::from_iter(
+                (0..objp_len)
+                    .map(|i| Point3f::new((i % width_dim) as f32, (i / height_dim) as f32, 0.)),
+            );
+
+            let calibraion: Calibration =
+                serde_json::from_slice(&fs::read(calibration_file).unwrap()).unwrap();
+            let mtx = Mat::new_rows_cols_with_data(3, 3, &calibraion.camera_matrix).unwrap();
+            let dist = Mat::new_rows_cols_with_data(1, 5, &calibraion.dist_coeffs).unwrap();
+
+            let count = fs::read_dir(&image_dir)?
+                .flatten()
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jpg"))
+                .count();
+            let pb = ProgressBar::new(count as u64);
+            pb.println("[1/3] process images");
+            let started = Instant::now();
+            fs::read_dir(&image_dir)?
+                .flatten()
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jpg"))
+                .map(|entry| entry.path().to_string_lossy().to_string())
+                .for_each(|image| {
+                    // Arrays to store object points and image points from all the images.
+                    pb.inc(1);
+                    let img = imgcodecs::imread_def(&image).unwrap();
+                    let mut gray = Mat::default();
+                    imgproc::cvt_color_def(&img, &mut gray, imgproc::COLOR_BGR2GRAY).unwrap();
+
+                    let mut corners = Vector::<Point2f>::default();
+                    let ret = find_chessboard_corners_def(
+                        &gray,
+                        Size::new(width_dim, height_dim),
+                        &mut corners,
+                    )
+                    .unwrap();
+                    if ret {
+                        imgproc::corner_sub_pix(
+                            &gray,
+                            &mut corners,
+                            Size::new(11, 11),
+                            Size::new(-1, -1),
+                            criteria,
+                        )
+                        .unwrap();
+
+                        let mut rvecs = Vector::<Mat>::new();
+                        let mut tvecs = Vector::<Mat>::new();
+
+                        if let Ok(_result) = solve_pnp_def(
+                            &objp, &corners, &mtx, &dist, &mut rvecs, // rotation
+                            &mut tvecs, // translation
+                        ) {
+                            pb.println(format!("{image} rotation {:?}", rvecs));
+                            pb.println(format!("{image} translation {:?}", tvecs));
+                        } else {
+                            pb.println(format!("{image} coult not estimate pose"));
+                        }
+
+                        // Draw and display corners
+                        //draw_chessboard_corners(&mut img, Size::new(width_dim, height_dim), &corners, ret)?;
+                        pb.set_message(format!(
+                            "{image} processed. in progress for {}",
+                            HumanDuration(started.elapsed())
+                        ));
+                    } else {
+                        pb.println(format!("[!] chessboard not found for image {image}"));
+                    }
+                });
+            pb.println(format!("done in {}", HumanDuration(started.elapsed())));
+            pb.finish_and_clear();
         }
     }
     Ok(())
