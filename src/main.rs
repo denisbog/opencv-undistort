@@ -5,9 +5,12 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand, arg};
 use indicatif::{HumanDuration, ProgressBar};
-use opencv::calib3d::{get_optimal_new_camera_matrix, solve_pnp, solve_pnp_def};
+use opencv::calib3d::{
+    RANSAC, SOLVEPNP_ITERATIVE, get_optimal_new_camera_matrix, init_undistort_rectify_map,
+    solve_pnp, solve_pnp_def,
+};
 use opencv::core::{
-    Point2f, Point3f, Size, TermCriteria, TermCriteria_EPS, TermCriteria_MAX_ITER, Vector,
+    Point2f, Point3f, Size, TermCriteria, TermCriteria_EPS, TermCriteria_MAX_ITER, Vector, no_array,
 };
 use opencv::imgcodecs::imwrite_def;
 use opencv::prelude::*;
@@ -105,13 +108,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     imgproc::cvt_color_def(&img, &mut gray, imgproc::COLOR_BGR2GRAY).unwrap();
 
                     let mut corners = Vector::<Point2f>::default();
-                    let ret = find_chessboard_corners_def(
+                    if let Ok(_) = find_chessboard_corners_def(
                         &gray,
                         Size::new(width_dim, height_dim),
                         &mut corners,
-                    )
-                    .unwrap();
-                    if ret {
+                    ) {
                         imgproc::corner_sub_pix(
                             &gray,
                             &mut corners,
@@ -120,25 +121,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                             criteria,
                         )
                         .unwrap();
-
-                        let mut mtx = Mat::default();
-                        let mut dist = Mat::default();
-                        let mut rvecs = Vector::<Mat>::new();
-                        let mut tvecs = Vector::<Mat>::new();
-                        if let Ok(_result) = solve_pnp_def(
-                            &objp, &corners, &mut mtx, &mut dist, &mut rvecs, // rotation
-                            &mut tvecs, // translation
-                        ) {
-                            pb.println(format!("{image} rotation {:?}", rvecs));
-                            pb.println(format!("{image} translation {:?}", tvecs));
-                        } else {
-                            pb.println(format!("{image} calibration failed"));
-                        }
-
                         // Draw and display corners
-                        //draw_chessboard_corners(&mut img, Size::new(width_dim, height_dim), &corners, ret)?;
+                        // draw_chessboard_corners(&mut img, Size::new(width_dim, height_dim), &corners, ret)?;
                         objpoints.push(objp.clone());
-                        imgpoints.push(corners);
+                        imgpoints.push(corners.clone());
+                        // println!("image {image}");
+                        // objp.iter()
+                        //     .zip(corners)
+                        //     .for_each(|item| println!("pair {item:?}"));
+
                         pb.set_message(format!(
                             "{image} processed. in progress for {}",
                             HumanDuration(started.elapsed())
@@ -243,24 +234,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .unwrap();
 
                     // Using remapping
-                    // let mut mapx = Mat::default();
-                    // let mut mapy = Mat::default();
-                    // init_undistort_rectify_map(
-                    //     &mtx,
-                    //     &dist,
-                    //     &no_array(),
-                    //     &no_array(),
-                    //     img.size()?,
-                    //     f32::opencv_type(),
-                    //     &mut mapx,
-                    //     &mut mapy,
-                    // )?;
-                    // let mut dst_remap = Mat::default();
-                    // imgproc::remap_def(&img, &mut dst_remap, &mapx, &mapy, imgproc::INTER_LINEAR)?;
-                    // imwrite_def(
-                    //     format!("{}/u1_{}", output_dir, new_image).as_str(),
-                    //     &dst_undistort,
-                    // )?;
+                    let mut mapx = Mat::default();
+                    let mut mapy = Mat::default();
+                    init_undistort_rectify_map(
+                        &mtx,
+                        &dist,
+                        &no_array(),
+                        &no_array(),
+                        img.size().unwrap(),
+                        f32::opencv_type(),
+                        &mut mapx,
+                        &mut mapy,
+                    )
+                    .unwrap();
+                    let mut dst_remap = Mat::default();
+                    imgproc::remap_def(&img, &mut dst_remap, &mapx, &mapy, imgproc::INTER_LINEAR)
+                        .unwrap();
+                    imwrite_def(
+                        format!("{}/u1_{}", output_dir, new_image).as_str(),
+                        &dst_undistort,
+                    )
+                    .unwrap();
                 });
         }
         Action::Solve {
@@ -307,13 +301,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     imgproc::cvt_color_def(&img, &mut gray, imgproc::COLOR_BGR2GRAY).unwrap();
 
                     let mut corners = Vector::<Point2f>::default();
-                    let ret = find_chessboard_corners_def(
+                    if let Ok(_) = find_chessboard_corners_def(
                         &gray,
                         Size::new(width_dim, height_dim),
                         &mut corners,
-                    )
-                    .unwrap();
-                    if ret {
+                    ) {
                         imgproc::corner_sub_pix(
                             &gray,
                             &mut corners,
@@ -326,9 +318,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let mut rvecs = Vector::<Mat>::new();
                         let mut tvecs = Vector::<Mat>::new();
 
-                        if let Ok(_result) = solve_pnp_def(
+                        // println!("image {image}");
+                        // objp.iter()
+                        //     .zip(corners.clone())
+                        //     .for_each(|item| println!("pair {item:?}"));
+                        if let Ok(_result) = solve_pnp(
                             &objp, &corners, &mtx, &dist, &mut rvecs, // rotation
                             &mut tvecs, // translation
+                            true, RANSAC,
                         ) {
                             pb.println(format!("{image} rotation {:?}", rvecs));
                             pb.println(format!("{image} translation {:?}", tvecs));

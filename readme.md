@@ -3,6 +3,7 @@
 ```bash
 cargo r --release -- calibrate --calibration-dir calibration --calibration-file calib.bin
 cargo r --release -- correct --calibration-file calib.bin --correction-dir process --output-dir out
+cargo r --release -- solve --calibration-file calib.bin --calibration-file calib.bin --image-dir out
 ```
 
 ## video for linux

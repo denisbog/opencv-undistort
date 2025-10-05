@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 bytes = "1.10.1"
-clap = { version = "4.5.38", features = ["derive"] }
-glam = "0.30.3"
-indicatif = "0.17.11"
-jpeg-decoder = "0.3.1"
-opencv = {version = "0.94.4", features = ["cudafilters", "cudaimgproc", "cudafilters", "clang-runtime"]}
-png = "0.17.16"
-rand = "0.9.1"
+clap = { version = "4.5.47", features = ["derive"] }
+glam = "0.30.5"
+indicatif = "0.18.0"
+jpeg-decoder = "0.3.2"
+opencv = {version = "0.95.1", features = ["cudafilters", "cudaimgproc", "cudafilters", "clang-runtime"]}
+png = "0.18.0"
+rand = "0.9.2"
 serde = { version ="1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
+serde_json = "1.0.143"
 v4l = "0.14.0"
-vulkano = "0.35.0"
-vulkano-shaders = "0.35.0"
+vulkano = "0.35.2"
+# vulkano-shaders = "0.35.0"
 vulkano-taskgraph = "0.35.1"
-winit = "0.30.11"
+winit = "0.30.12"
